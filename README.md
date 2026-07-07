@@ -7,17 +7,10 @@
 
 ## MQTT in 60 seconds (if you've never touched it)
 
-- **MQTT is not a queue — it's a broker.** Nobody talks to anybody directly, and messages are not
-  lined up for a single consumer. Instead there is a middleman (the broker): everyone connects to
-  it, some **publish** messages, others **subscribe** — and the broker instantly hands each
-  message to whoever is subscribed.
-- **Topics & subscriptions in one sentence:** a *topic* is just a named channel like
-  `health/press-01`, and a *subscription* is saying "give me everything published to this topic"
-  — with wildcards like `health/+`.
-- **Mosquitto** is the broker we use — a tiny, battle-tested open-source MQTT server. In this
-  project it runs as a stock Docker image (`eclipse-mosquitto:2`) and is configured by 
-  file, [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf): listen on TCP `1883`, allow
-  anonymous clients, keep retained messages, log to stdout. 
+- **MQTT is not a queue — it's a broker.** Nobody talks to anybody directly, and messages are not lined up for a single consumer. Instead there is a middleman (the broker): everyone connects to it, some **publish** messages, others **subscribe** — and the broker instantly hands each message to whoever is subscribed.
+- A **topic** is just a named channel like `health/press-01`, and a *subscription* is saying "give me everything published to this topic" — with wildcards like `health/+`.
+- **Mosquitto** is the broker we use — a tiny MQTT server. It runs as a stock Docker image (`eclipse-mosquitto:2`) and is configured by [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf): listen on TCP `1883`, allow
+  anonymous clients, keep retained messages, log to `stdout`. 
 
 ## Project tour
 
@@ -31,10 +24,8 @@ Ui/       the control panel (ASP.NET Core + SignalR web page)
 
 A pure C# class with **no networking at all** — just behavior:
 
-- **`Work(random)` — the tick.** Called once per second. Each tick the device: advances its
-  internal clock, maybe develops (or recovers from) a random fault, computes its current power
-  draw and temperature, and returns a fresh `MqttPayload_Health` snapshot.
-- **`Obey(command)` — accepting a command.** A plain `switch`: `STOP`, `START`, `SET_SPEED`. The command simply mutates with each *next tick* .
+- **`Work` — the tick.** Computes current power draw and temperature, and returns a snapshot. May produce a fault.
+- **`Obey` — accepting a command.** Start, stop or set speed. The command simply mutates with each *next tick* .
 - **Faults** are part of the fun: overheat, jam, and short circuit — which takes the device offline for a while.
 
 ### `Hw/HwMqttChip.cs` — the simulated "MQTT chip"
@@ -49,60 +40,33 @@ If `HwItem` is the motor, `HwMqttChip` is the network board. One chip = **one re
 
 Two MQTT features worth knowing here:
 
-- **Retained messages** (`retain` flag): the broker keeps the *last* message of a topic and gives
-  it to any new subscriber immediately. Our `isonline` statuses are retained — so a freshly
-  started panel instantly knows who is alive without waiting for anyone to speak.
-- **LWT (Last Will and Testament):** at connect time each chip leaves a "will" with the broker:
-  *"if I ever vanish without saying goodbye — publish `isonline: false` on my behalf."* Kill the
-  `hw` container and the broker itself reports every device offline. Nobody polls anything.
+- **Retained messages** (`retain` flag): the broker keeps the *last* message for new subscribers.
 
-The chips also use two QoS (delivery guarantee) levels: health readings go as QoS 0
-("fire and forget" — a lost reading doesn't matter, a new one comes in a second), while commands
-and statuses go as QoS 1 ("at least once" — these must arrive).
+- **LWT (Last Will):** publish `isonline: false` on my behalf, if I disappear and won't be able to.
 
-### `Hw/HwFleetWorker.cs` — the background service that runs the fleet
+The chips also use two QoS levels: QoS 0 ("fire and forget"), and QoS 1 for commands.
 
-A standard .NET `BackgroundService` hosted in a console app ([`Hw/Program.cs`](Hw/Program.cs)).
-On startup it:
+### `Hw/HwFleetWorker.cs` — runs hardware fleet
 
-1. reads its settings from environment variables (`MQTT_HOST`, `HW_COUNT`, `FAULT_PROBABILITY`…),
+A `BackgroundService` hosted in a console app. On startup it:
+
+1. reads its settings from environment variables (`MQTT_HOST`, `HW_COUNT`, `FAULT_PROBABILITY`…)
 2. asks `HwFleetFactory` to build N devices with realistic names (`press-01`, `conveyor-02`, …)
-   and per-type nominal power,
-3. wraps each device in its own `HwMqttChip` and starts all of their `RunAsync` loops
-   **concurrently** (collecting the `Task`s without awaiting each one),
-4. then `await Task.WhenAll(...)` — which keeps the service alive until shutdown.
-
-Twenty devices, twenty TCP connections, a handful of threads — thanks to `async/await`.
-
-### `Ui/` — the control panel (briefly)
-
-- **`MqttBridge`** — the mirror image of a chip, but for the whole floor: subscribes to
-  `health/+` and `isonline/+` (wildcards!), remembers the latest reading of every device, keeps a
-  small journal of *state changes* (faults, recoveries, operator actions), and once per second
-  pushes a `FactorySnapshot` to every browser via SignalR. It also publishes commands back.
-- **`FactoryHub`** — the SignalR hub: sends a new browser its initial snapshot + chart history,
-  and exposes one method, `SendCommand`, that the browser invokes when you click a tile.
-- **`wwwroot/`** — a single static page (Bootstrap + Chart.js): live chart with a power-limit
-  line, a colored tile per device, start/stop/speed buttons, and the journal.
-
----
+3. wraps each device in its own `HwMqttChip` and starts all of their `RunAsync` loops **concurrently** 
+4. then `await Task.WhenAll(...)` — which keeps the service alive until shutdown
 
 ## Running it
 
-### Containers: what is configured where
-
-Everything lives in one file — [`docker-compose.yml`](docker-compose.yml) — which defines three
-services on a shared network (inside it, service names work as DNS hostnames — that's why the
-apps connect to `MQTT_HOST: "broker"`, not an IP):
+Everything lives in one file — [`docker-compose.yml`](docker-compose.yml) — three
+services on a shared network:
 
 | Service | What it is | Configured by |
 |---|---|---|
-| `broker` | stock `eclipse-mosquitto:2` image, port `1883` (also exposed to your host) | [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf), mounted read-only into the container |
-| `ui` | the control panel, built from [`Ui/Dockerfile`](Ui/Dockerfile), port `8080` | env vars: `MQTT_HOST`, `MQTT_PORT`, `POWER_LIMIT_KW` (the chart's limit line) |
-| `hw` | the device fleet, built from [`Hw/Dockerfile`](Hw/Dockerfile) | env vars: `MQTT_HOST`, `MQTT_PORT`, `HW_COUNT` (fleet size), `FAULT_PROBABILITY` (chaos level) |
+| `broker` | stock `eclipse-mosquitto:2` image, port `1883` | [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf), mounted read-only into the container |
+| `ui` | control panel, [`Ui/Dockerfile`](Ui/Dockerfile), port `8080` | `MQTT_HOST`, `MQTT_PORT`, `POWER_LIMIT_KW` (the chart's limit line) |
+| `hw` | device fleet, [`Hw/Dockerfile`](Hw/Dockerfile) | `MQTT_HOST`, `MQTT_PORT`, `HW_COUNT` (fleet size), `FAULT_PROBABILITY` (chaos level) |
 
-Both Dockerfiles are classic two-stage .NET builds: compile with the `sdk` image, run on the
-slim `aspnet`/`runtime` image. All app settings come **only** from environment variables with
+All app settings come **only** from environment variables with
 sane code defaults — there are no appsettings files.
 
 ### Start everything
@@ -125,13 +89,3 @@ docker compose exec broker mosquitto_sub -t '#' -v
 # stop a press by hand (exactly what a tile click does):
 docker compose exec broker mosquitto_pub -t 'command/press-01' -m '{"command":"STOP"}'
 ```
-
-### Local development (without Docker for the .NET apps)
-
-```bash
-docker compose up broker     # broker only
-dotnet run --project Ui      # http://localhost:5080
-dotnet run --project Hw
-```
-
-Both apps default to `localhost:1883`, so they find the dockerized broker automatically.
