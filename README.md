@@ -7,10 +7,9 @@
 
 ## MQTT in 60 seconds
 
-- **MQTT is not a queue — it's a broker.** Nobody talks to anybody directly. There is a middleman. Everyone connects to it, some **publish** messages, others **subscribe** — and the broker instantly hands each message to whoever is subscribed.
+- **MQTT is not a queue — it's a broker.** Nobody talks to anybody directly. There is a middleman. Everyone connects to it, some **publish** messages, others **subscribe**.
 - A **topic** is just a named channel like `health/press-01`, and a *subscription* is saying "give me everything published to this topic" — with wildcards like `health/+`.
-- **Mosquitto** is the broker we use — a tiny MQTT server. It runs as a stock Docker image (`eclipse-mosquitto:2`) and is configured by [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf): listen on TCP `1883`, allow
-  anonymous clients, keep retained messages, log to `stdout`. 
+- **Mosquitto** broker is a tiny MQTT server. It runs as a stock Docker image and is configured by [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf): TCP `1883`, allow anonymous, keep retained messages, log to `stdout`. 
 
 ## Project tour
 
@@ -32,11 +31,10 @@ A pure C# class with **no networking at all** — just behavior:
 
 If `HwItem` is the motor, `HwMqttChip` is the network board. One chip = **one real TCP connection** to the broker.
 
-- connects with retry (the broker container may start later)
+- connects with retry
 - subscribes to **its own** `command/{id}` topic
 - once per second calls `Work()` and publishes to `health/{id}`
 - hands every incoming command to `Obey()`
-- announces `isonline/{id}` — but **only when the state changes**
 
 Two MQTT features worth knowing here:
 
@@ -44,11 +42,9 @@ Two MQTT features worth knowing here:
 
 - **LWT (Last Will):** publish `isonline: false` on my behalf, if I disappear and won't be able to.
 
-The chips also use two QoS levels: QoS 0 ("fire and forget"), and QoS 1 for commands.
-
 ### `Hw/HwFleetWorker.cs` — runs hardware fleet
 
-A `BackgroundService` hosted in a console app. On startup it:
+A `BackgroundService` hosted in a console app.
 
 - reads its settings from environment variables (`MQTT_HOST`, `HW_COUNT`, `FAULT_PROBABILITY`…)
 - asks `HwFleetFactory` to build N devices with realistic names (`press-01`, `conveyor-02`, …)

@@ -1,0 +1,41 @@
+/* Chart height: full on wide screens, shorter on narrow (mobile/LinkedIn view) */
+#chart-box { min-height: 240px; }
+@media (max-width: 991.98px) {
+  #chart-box { min-height: 150px; }
+}
+
+/* Equipment grid: many small tiles, color = state, click = command */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 5px;
+}
+
+.device-tile {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.3s;
+}
+.device-tile:hover { filter: brightness(0.92); }
+
+/* Equipment state colors (light theme) */
+.st-normal        { background: #7ac68f; }             /* green: running */
+.st-throttled     { background: #ffd75e; }             /* yellow: reduced speed */
+.st-stopped       { background: #c3ccd4; }             /* gray: stopped by operator */
+.st-overheat      { background: #ff9d4d; }             /* orange: overheating */
+.st-jam           { background: #c08fe0; }             /* purple: jammed */
+.st-short_circuit { background: #f28b82; }             /* red: short circuit */
+.st-offline       { background: #e9ecef; opacity: .6; cursor: default; } /* pale: went offline */
+
+#log li {
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

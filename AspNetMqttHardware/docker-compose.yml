@@ -1,0 +1,46 @@
+# The whole factory with one command: docker compose up --build
+# Control panel: http://localhost:8080
+
+services:
+
+  # MQTT broker — the "nervous system" between the panel and the devices.
+  broker:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"   # exposed to the host so you can play with mosquitto_sub/mosquitto_pub
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Control panel: MQTT bridge + SignalR + web page.
+  ui:
+    build:
+      context: .
+      dockerfile: Ui/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      broker:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: "broker"       # service names = DNS inside the compose network
+      MQTT_PORT: "1883"
+      POWER_LIMIT_KW: "280"     # factory power limit (the line on the chart)
+
+  # Factory equipment — N independent MQTT clients.
+  hw:
+    build:
+      context: .
+      dockerfile: Hw/Dockerfile
+    depends_on:
+      broker:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: "broker"
+      MQTT_PORT: "1883"
+      HW_COUNT: "20"
+      FAULT_PROBABILITY: "0.002"  # per-device fault chance per second

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🏭 Factory floor — MQTT demo</title>
+  <link href="vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<main class="container-xxl py-3">
+
+  <!-- Banner: status · consumption · time -->
+  <div id="banner" class="alert alert-secondary d-flex justify-content-between align-items-center py-2 px-3 mb-2">
+    <span id="status-text" class="fw-bold small">CONNECTING…</span>
+    <span class="fs-4 fw-bold"><span id="total-kw">—</span><small class="fs-6 fw-normal text-secondary"> / <span id="limit-kw">—</span> kW</small></span>
+    <span id="clock" class="font-monospace small">--:--:--</span>
+  </div>
+
+  <!-- On wide screens: chart on the left, control panel on the right; stacked on narrow -->
+  <div class="row g-2">
+
+    <!-- Live consumption chart -->
+    <div class="col-12 col-lg-7">
+      <div id="chart-box" class="bg-white border rounded p-2 h-100"><canvas id="chart"></canvas></div>
+    </div>
+
+    <!-- Control panel -->
+    <div class="col-12 col-lg-5">
+      <!-- Hover a tile → device info appears here (and updates live) -->
+      <div id="device-info" class="small font-monospace text-secondary bg-white border rounded px-2 py-1 mb-1 d-flex align-items-center justify-content-center"
+           style="min-height: 2rem">hover over a device</div>
+
+      <!-- Equipment: tile = device, click = start/stop -->
+      <div id="devices" class="device-grid mb-1"></div>
+      <div id="device-summary" class="small text-secondary text-center mb-2">—</div>
+
+      <!-- Whole-factory controls -->
+      <div class="d-flex gap-2 mb-2">
+        <button id="btn-start-all" class="btn btn-success btn-sm flex-fill">▶ Start all</button>
+        <button id="btn-stop-all" class="btn btn-danger btn-sm flex-fill">⏸ Stop all</button>
+        <button id="btn-speed" class="btn btn-warning btn-sm flex-fill">🐢 Apply 50% speed</button>
+      </div>
+
+      <!-- Factory journal -->
+      <ul id="log" class="list-unstyled small font-monospace bg-white border rounded p-2 mb-0"></ul>
+    </div>
+
+  </div>
+
+</main>
+
+<script src="vendor/signalr.min.js"></script>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
