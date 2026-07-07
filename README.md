@@ -13,11 +13,11 @@
   message to whoever is subscribed.
 - **Topics & subscriptions in one sentence:** a *topic* is just a named channel like
   `health/press-01`, and a *subscription* is saying "give me everything published to this topic"
-  — with wildcards like `health/+` meaning "health of **every** device with a single subscription".
+  — with wildcards like `health/+`.
 - **Mosquitto** is the broker we use — a tiny, battle-tested open-source MQTT server. In this
-  project it runs as a stock Docker image (`eclipse-mosquitto:2`) and is configured by one small
+  project it runs as a stock Docker image (`eclipse-mosquitto:2`) and is configured by 
   file, [`mosquitto/mosquitto.conf`](mosquitto/mosquitto.conf): listen on TCP `1883`, allow
-  anonymous clients (fine for a local demo), persist retained messages, log to stdout. 
+  anonymous clients, keep retained messages, log to stdout. 
 
 ## Project tour
 
@@ -27,44 +27,25 @@ Hw/       the simulated hardware (20 MQTT clients)
 Ui/       the control panel (ASP.NET Core + SignalR web page)
 ```
 
-### `Shared/Mqtt.cs` — the shared data contracts
-
-One file describes the entire wire protocol, used by both `Hw` and `Ui`:
-
-- **`MqttTopic`** — topic names: `command/{id}` (panel → device), `health/{id}` (device → panel,
-  ~1 per second), `isonline/{id}` (device → everyone).
-- **`MqttPayload_Command` / `MqttPayload_Health` / `MqttPayload_IsOnline`** — the three message
-  shapes that travel through those topics, serialized to JSON.
-- **`HwType` / `HwState`** — plain string constants (`"press"`, `"overheat"`, …) instead of enums,
-  so the JSON on the wire stays human-readable in `mosquitto_sub`.
-
 ### `Hw/HwItem.cs` — the "physics" of one device
 
 A pure C# class with **no networking at all** — just behavior:
 
 - **`Work(random)` — the tick.** Called once per second. Each tick the device: advances its
   internal clock, maybe develops (or recovers from) a random fault, computes its current power
-  draw (nominal power × duty cycle × speed factor × noise) and body temperature (a Celsius model
-  with inertia — the body heats up and cools down gradually, like real iron), and returns a fresh
-  `MqttPayload_Health` snapshot.
-- **`Obey(command)` — accepting a command.** A plain `switch`: `STOP` puts the machine into
-  standby, `START` resumes full speed, `SET_SPEED` applies a speed factor. The command simply
-  mutates internal state — the *next tick* naturally reflects it in the readings.
-- **Faults** are part of the fun: overheat (protection lowers the speed, temperature → ~98 °C),
-  jam (the motor draws *more*), and short circuit — which "trips the breaker" and takes the
-  device offline for a while.
+  draw and temperature, and returns a fresh `MqttPayload_Health` snapshot.
+- **`Obey(command)` — accepting a command.** A plain `switch`: `STOP`, `START`, `SET_SPEED`. The command simply mutates with each *next tick* .
+- **Faults** are part of the fun: overheat, jam, and short circuit — which takes the device offline for a while.
 
 ### `Hw/HwMqttChip.cs` — the simulated "MQTT chip"
 
-If `HwItem` is the motor, `HwMqttChip` is the little network board bolted onto it. One chip = one
-device = **one real TCP connection** to the broker. It:
+If `HwItem` is the motor, `HwMqttChip` is the network board. One chip = **one real TCP connection** to the broker. It:
 
-1. connects with retry (the broker container may start later — the chip just keeps trying),
-2. subscribes to **its own** `command/{id}` topic on every (re)connect,
-3. once per second calls `Work()` and publishes the result to `health/{id}`,
-4. hands every incoming command to `Obey()` (guarded by a `lock` — ticks and commands arrive on
-   different threads),
-5. announces `isonline/{id}` — but **only when the state changes**, not every second.
+1. connects with retry (the broker container may start later)
+2. subscribes to **its own** `command/{id}` topic
+3. once per second calls `Work()` and publishes to `health/{id}`
+4. hands every incoming command to `Obey()`
+5. announces `isonline/{id}` — but **only when the state changes**
 
 Two MQTT features worth knowing here:
 
